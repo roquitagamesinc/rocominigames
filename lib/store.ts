@@ -10,18 +10,30 @@ export interface Player {
   status: 'alive' | 'dead';
 }
 
+export interface FoodItem {
+  id: string;
+  x: number;
+  y: number;
+  color: string;
+}
+
 interface GameState {
   myId: string | null;
   players: Record<string, Player>;
+  food: Record<string, FoodItem>;
   setMyId: (id: string) => void;
   updatePlayer: (player: Player) => void;
   removePlayer: (id: string) => void;
   setPlayers: (players: Record<string, Player>) => void;
+  updateFood: (item: FoodItem) => void;
+  removeFood: (id: string) => void;
+  setFood: (food: Record<string, FoodItem>) => void;
 }
 
 export const useGameStore = create<GameState>((set) => ({
   myId: null,
   players: {},
+  food: {},
   setMyId: (id) => set({ myId: id }),
   updatePlayer: (player) =>
     set((state) => ({
@@ -34,4 +46,15 @@ export const useGameStore = create<GameState>((set) => ({
       return { players: newPlayers };
     }),
   setPlayers: (players) => set({ players }),
+  updateFood: (item) =>
+    set((state) => ({
+      food: { ...state.food, [item.id]: item },
+    })),
+  removeFood: (id) =>
+    set((state) => {
+      const newFood = { ...state.food };
+      delete newFood[id];
+      return { food: newFood };
+    }),
+  setFood: (food) => set({ food }),
 }));

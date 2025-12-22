@@ -2,20 +2,24 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, Environment, Stars } from '@react-three/drei';
-import { useGameStore, Player } from '@/lib/store';
+import { PerspectiveCamera, Stars, Grid } from '@react-three/drei';
+import { useGameStore, Player, FoodItem } from '@/lib/store';
 import { Rock } from './Rock';
-import { databases, client, APPWRITE_DATABASE_ID, APPWRITE_COLLECTION_ID } from '@/lib/appwrite';
+import { Food } from './Food';
+import { databases, client, APPWRITE_DATABASE_ID, APPWRITE_COLLECTION_ID, APPWRITE_FOOD_COLLECTION_ID } from '@/lib/appwrite';
 import * as THREE from 'three';
 import { IJoystickUpdateEvent } from 'react-joystick-component/build/lib/Joystick';
+import { v4 as uuidv4 } from 'uuid';
 
 interface GameSceneProps {
   joystickData: IJoystickUpdateEvent | null;
 }
 
+const MAP_SIZE = 100;
+
 const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
-  const { myId, players, updatePlayer, removePlayer } = useGameStore();
-  const { camera, gl } = useThree();
+  const { myId, players, food, updatePlayer, removeFood, updateFood } = useGameStore();
+  const { camera } = useThree();
   const [lastUpdate, setLastUpdate] = useState(0);
 
   // Mouse position tracking
@@ -32,22 +36,47 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
+  // Spawn food logic (Master-less: Probabilistic spawning by players)
+  useFrame(() => {
+    // Only spawn if total food is low and I am "lucky" (to avoid everyone spawning at once)
+    const foodCount = Object.keys(food).length;
+    if (foodCount < 50 && Math.random() < 0.01) {
+       const id = uuidv4();
+       const newFood: FoodItem = {
+           id,
+           x: (Math.random() - 0.5) * MAP_SIZE,
+           y: (Math.random() - 0.5) * MAP_SIZE,
+           color: `hsl(${Math.random() * 360}, 70%, 60%)`
+       };
+       // Optimistic update
+       updateFood(newFood);
+
+       databases.createDocument(
+           APPWRITE_DATABASE_ID,
+           APPWRITE_FOOD_COLLECTION_ID,
+           id,
+           newFood
+       ).catch(e => {
+           // If it fails (permission etc), remove it
+           removeFood(id);
+       });
+    }
+  });
+
   useFrame((state, delta) => {
     if (!myId || !players[myId]) return;
 
     const me = players[myId];
-    if (me.status === 'dead') return; // Do nothing if dead
+    if (me.status === 'dead') return;
 
     let moveX = 0;
     let moveZ = 0;
-    const speed = 5 * (10 / (me.size + 5)); // Slower as you get bigger
+    const speed = 5 * (10 / (me.size + 5));
 
     if (joystickData) {
-      // Mobile / Joystick control
       if (joystickData.x) moveX = joystickData.x * speed * delta;
-      if (joystickData.y) moveZ = -joystickData.y * speed * delta; // Joystick Y is inverted usually
+      if (joystickData.y) moveZ = -joystickData.y * speed * delta;
     } else {
-      // Mouse control (follow mouse on ground plane)
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(mousePos.current, camera);
       const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -56,7 +85,7 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
 
       if (target) {
         const direction = new THREE.Vector3().subVectors(target, new THREE.Vector3(me.x, 0, me.y));
-        if (direction.length() > 0.5) { // Deadzone
+        if (direction.length() > 0.5) {
             direction.normalize();
             moveX = direction.x * speed * delta;
             moveZ = direction.z * speed * delta;
@@ -64,67 +93,65 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
       }
     }
 
-    const newX = me.x + moveX;
-    const newY = me.y + moveZ; // Y in store is Z in 3D space usually, but let's map Store Y to 3D Z.
+    // Boundary check
+    const nextX = Math.max(-MAP_SIZE / 2, Math.min(MAP_SIZE / 2, me.x + moveX));
+    const nextY = Math.max(-MAP_SIZE / 2, Math.min(MAP_SIZE / 2, me.y + moveZ));
 
-    // Update local store immediately for smooth prediction
-    const newMe = { ...me, x: newX, y: newY };
+    const newMe = { ...me, x: nextX, y: nextY };
     updatePlayer(newMe);
 
-    // Camera follow
-    camera.position.lerp(new THREE.Vector3(newX, Math.max(10, me.size * 5), newY + Math.max(10, me.size * 5)), 0.1);
-    camera.lookAt(newX, 0, newY);
+    // Camera follow - Centered on player
+    const camOffset = new THREE.Vector3(0, Math.max(10, me.size * 5), Math.max(10, me.size * 5));
+    const targetCamPos = new THREE.Vector3(nextX, 0, nextY).add(camOffset);
+    camera.position.lerp(targetCamPos, 0.1);
+    camera.lookAt(nextX, 0, nextY);
 
-    // Eating Logic (Client Side Check)
-    Object.values(players).forEach(other => {
-        if (other.id !== me.id && other.status === 'alive') {
-            const dist = Math.sqrt(Math.pow(me.x - other.x, 2) + Math.pow(me.y - other.y, 2));
-            if (dist < me.size && me.size > other.size * 1.1) {
-                // EAT!
-                // Update local size
-                const newSize = Math.sqrt(me.size * me.size + other.size * other.size); // Conservation of area-ish
-                const grownMe = { ...newMe, size: newSize };
-                updatePlayer(grownMe);
+    // Eating Food
+    Object.values(food).forEach(f => {
+        const dist = Math.sqrt(Math.pow(me.x - f.x, 2) + Math.pow(me.y - f.y, 2));
+        if (dist < me.size) {
+            // Eat food
+            removeFood(f.id);
+            const grownMe = { ...newMe, size: Math.sqrt(me.size * me.size + 0.1) }; // Grow slightly
+            updatePlayer(grownMe);
 
-                // Mark other as dead locally to hide immediately
-                updatePlayer({ ...other, status: 'dead' });
-
-                // Sync eating to server
-                // We update OUR size.
-                // We ideally should update THEIR status to dead. Since we don't have server logic, we try to update their doc.
-                // Note: This requires Row Level Security to allow users to update others, which is insecure.
-                // For this tutorial, we assume permissions are open or we only update ourselves and they check if they are eaten.
-                // Better approach for tutorial: Client B checks if it is overlapping Client A (who is bigger) and kills itself.
-                // But latency... Let's try to update the victim if possible, or just rely on victim checking.
-                // Let's implement victim checking: EVERYONE checks if they are being eaten.
-            }
+            // Server delete
+            databases.deleteDocument(
+                APPWRITE_DATABASE_ID,
+                APPWRITE_FOOD_COLLECTION_ID,
+                f.id
+            ).catch(console.error);
         }
     });
 
-    // Victim check: Am I inside a bigger player?
+    // Eating Players & Being Eaten
     Object.values(players).forEach(other => {
         if (other.id !== me.id && other.status === 'alive') {
-             const dist = Math.sqrt(Math.pow(me.x - other.x, 2) + Math.pow(me.y - other.y, 2));
-             // If I am inside a bigger player
-             if (dist < other.size && other.size > me.size * 1.1) {
-                 // I died.
-                 const deadMe = { ...me, status: 'dead' as const };
-                 updatePlayer(deadMe);
-                 // Send update to server
+            const dist = Math.sqrt(Math.pow(me.x - other.x, 2) + Math.pow(me.y - other.y, 2));
+
+            // Eat logic
+            if (dist < me.size && me.size > other.size * 1.1) {
+                const newSize = Math.sqrt(me.size * me.size + other.size * other.size);
+                updatePlayer({ ...newMe, size: newSize });
+                updatePlayer({ ...other, status: 'dead' });
+            }
+
+            // Die logic
+            if (dist < other.size && other.size > me.size * 1.1) {
+                 updatePlayer({ ...me, status: 'dead' });
                  databases.updateDocument(
                     APPWRITE_DATABASE_ID,
                     APPWRITE_COLLECTION_ID,
                     me.id,
                     { status: 'dead' }
                  ).catch(console.error);
-             }
+            }
         }
     });
 
-
-    // Throttle server updates
+    // Server Sync
     const now = Date.now();
-    if (now - lastUpdate > 100) { // 10 updates per second
+    if (now - lastUpdate > 100) {
       setLastUpdate(now);
       databases.updateDocument(
         APPWRITE_DATABASE_ID,
@@ -145,8 +172,21 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
       <directionalLight position={[10, 20, 10]} intensity={1} castShadow />
       <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
 
-      {/* Grid for reference */}
-      <gridHelper args={[200, 200]} position={[0, -0.1, 0]} />
+      {/* Improved Grid */}
+      <Grid
+        args={[MAP_SIZE, MAP_SIZE]}
+        position={[0, -0.1, 0]}
+        cellColor="gray"
+        sectionColor="white"
+        sectionThickness={1}
+        cellThickness={0.5}
+        fadeDistance={50}
+        infiniteGrid={false}
+      />
+
+      {Object.values(food).map((f) => (
+          <Food key={f.id} {...f} />
+      ))}
 
       {Object.values(players).map((p) => (
         p.status === 'alive' && <Rock key={p.id} player={p} isMe={p.id === myId} />

@@ -4,8 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { GameScene } from '@/components/GameScene';
 import { UI } from '@/components/UI';
-import { useGameStore, Player } from '@/lib/store';
-import { client, databases, APPWRITE_DATABASE_ID, APPWRITE_COLLECTION_ID } from '@/lib/appwrite';
+import { useGameStore, Player, FoodItem } from '@/lib/store';
+import { client, databases, APPWRITE_DATABASE_ID, APPWRITE_COLLECTION_ID, APPWRITE_FOOD_COLLECTION_ID } from '@/lib/appwrite';
 import { IJoystickUpdateEvent } from 'react-joystick-component/build/lib/Joystick';
 
 export default function Home() {
@@ -14,7 +14,7 @@ export default function Home() {
   const [isMobile, setIsMobile] = useState(false);
   const [joystickData, setJoystickData] = useState<IJoystickUpdateEvent | null>(null);
 
-  const { setMyId, updatePlayer, removePlayer, players } = useGameStore();
+  const { setMyId, updatePlayer, removePlayer, players, updateFood, removeFood } = useGameStore();
 
   useEffect(() => {
     // Check if mobile
@@ -56,12 +56,11 @@ export default function Home() {
         me
       );
 
-      // Subscribe to changes
+      // Subscribe to changes (Players)
       client.subscribe(`databases.${APPWRITE_DATABASE_ID}.collections.${APPWRITE_COLLECTION_ID}.documents`, response => {
-        const payload = response.payload as any; // Appwrite event payload
+        const payload = response.payload as any;
         const eventId = payload.$id;
 
-        // Handle events
         if (response.events.some(e => e.includes('.create') || e.includes('.update'))) {
              const p: Player = {
                  id: payload.id || payload.$id,
@@ -72,16 +71,12 @@ export default function Home() {
                  color: payload.color,
                  status: payload.status
              };
-             // Ignore my own updates from server to avoid jitter/lag (client prediction is smoother)
-             // But if I died, I need to know.
              if (p.id === id) {
                  if (p.status === 'dead' && me.status !== 'dead') {
-                     // I died!
                      updatePlayer(p);
                      alert("Has sido comido!");
                      window.location.reload();
                  }
-                 // ignore position updates for myself
              } else {
                  updatePlayer(p);
              }
@@ -90,12 +85,30 @@ export default function Home() {
         }
       });
 
+      // Subscribe to changes (Food)
+      client.subscribe(`databases.${APPWRITE_DATABASE_ID}.collections.${APPWRITE_FOOD_COLLECTION_ID}.documents`, response => {
+        const payload = response.payload as any;
+        const eventId = payload.$id;
+
+        if (response.events.some(e => e.includes('.create') || e.includes('.update'))) {
+             const f: FoodItem = {
+                 id: payload.id || payload.$id,
+                 x: payload.x,
+                 y: payload.y,
+                 color: payload.color
+             };
+             updateFood(f);
+        } else if (response.events.some(e => e.includes('.delete'))) {
+            removeFood(eventId);
+        }
+      });
+
       // Load initial players
-      const existing = await databases.listDocuments(
+      const existingPlayers = await databases.listDocuments(
           APPWRITE_DATABASE_ID,
           APPWRITE_COLLECTION_ID
       );
-      existing.documents.forEach((doc: any) => {
+      existingPlayers.documents.forEach((doc: any) => {
           if (doc.$id !== id && doc.status === 'alive') {
               updatePlayer({
                   id: doc.$id,
@@ -107,6 +120,20 @@ export default function Home() {
                   status: doc.status
               });
           }
+      });
+
+      // Load initial food
+      const existingFood = await databases.listDocuments(
+        APPWRITE_DATABASE_ID,
+        APPWRITE_FOOD_COLLECTION_ID
+      );
+      existingFood.documents.forEach((doc: any) => {
+        updateFood({
+            id: doc.$id,
+            x: doc.x,
+            y: doc.y,
+            color: doc.color
+        });
       });
 
       setIsPlaying(true);
