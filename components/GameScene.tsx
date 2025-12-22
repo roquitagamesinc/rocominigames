@@ -16,13 +16,13 @@ interface GameSceneProps {
 }
 
 const MAP_SIZE = 100;
-const MAX_FOOD = 150; // Increased limit considerably
+const MAX_FOOD = 150;
 
 const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
   const { myId, players, food, updatePlayer, removeFood, updateFood, removePlayer } = useGameStore();
   const { camera } = useThree();
 
-  // Refs for timers to avoid unnecessary re-renders
+  // Refs for timers
   const lastUpdate = useRef(0);
   const lastCleanup = useRef(0);
   const lastSpawnCheck = useRef(0);
@@ -52,7 +52,6 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
            y: (Math.random() - 0.5) * MAP_SIZE,
            color: `hsl(${Math.random() * 360}, 70%, 60%)`
        };
-       // Optimistic Update
        updateFood(newFood);
 
        databases.createDocument(
@@ -61,7 +60,6 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
            id,
            newFood
        ).catch(e => {
-           // If creation fails (e.g. permission or rate limit), remove local copy
            removeFood(id);
        });
   };
@@ -69,14 +67,11 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
   // Spawn food logic (Periodic check)
   useFrame(() => {
     const now = Date.now();
-    // Check every 2 seconds to optimize server load
     if (now - lastSpawnCheck.current > 2000) {
         lastSpawnCheck.current = now;
         const foodCount = Object.keys(food).length;
         const playerCount = Object.keys(players).length || 1;
 
-        // Dynamic probability based on player count to normalize server load.
-        // If 1 player: 20% chance. If 10 players: 2% chance each.
         const spawnChance = 0.2 / playerCount;
 
         if (foodCount < MAX_FOOD && Math.random() < spawnChance) {
@@ -92,7 +87,6 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
           lastCleanup.current = now;
           Object.values(players).forEach(p => {
               if (p.id !== myId && p.lastHeartbeat) {
-                  // Remove players inactive for > 30s
                   if (now - p.lastHeartbeat > 30000) {
                       removePlayer(p.id);
                       databases.deleteDocument(
@@ -140,7 +134,6 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
     const nextX = Math.max(-MAP_SIZE / 2, Math.min(MAP_SIZE / 2, me.x + moveX));
     const nextY = Math.max(-MAP_SIZE / 2, Math.min(MAP_SIZE / 2, me.y + moveZ));
 
-    // Current state of the player for this frame
     let currentMe = { ...me, x: nextX, y: nextY, lastHeartbeat: Date.now() };
     updatePlayer(currentMe);
 
@@ -155,21 +148,15 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
     Object.values(food).forEach(f => {
         const dist = Math.sqrt(Math.pow(currentMe.x - f.x, 2) + Math.pow(currentMe.y - f.y, 2));
         if (dist < currentMe.size) {
-            // 1. Remove locally immediately
             removeFood(f.id);
-
-            // 2. Grow player
             currentMe = { ...currentMe, size: Math.sqrt(currentMe.size * currentMe.size + 0.1) };
             updatePlayer(currentMe);
-
-            // 3. Remove from DB
             databases.deleteDocument(
                 APPWRITE_DATABASE_ID,
                 APPWRITE_FOOD_COLLECTION_ID,
                 f.id
             ).catch(console.error);
 
-            // 4. Spawn replacement if needed (Keeps density high without polling)
             if (Object.keys(food).length < MAX_FOOD) {
                 spawnFood();
             }
@@ -201,7 +188,12 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
 
     // Server Sync (Position + Heartbeat)
     const now = Date.now();
-    if (now - lastUpdate.current > 333) {
+    const playerCount = Object.keys(players).length;
+    // If only 1 player, sync much less frequently (5s) just to keep heartbeat alive.
+    // If >1 player, sync normally (333ms)
+    const syncInterval = playerCount <= 1 ? 5000 : 333;
+
+    if (now - lastUpdate.current > syncInterval) {
       lastUpdate.current = now;
       databases.updateDocument(
         APPWRITE_DATABASE_ID,

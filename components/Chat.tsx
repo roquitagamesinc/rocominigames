@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useGameStore } from '@/lib/store';
+import { useGameStore, ChatMessage } from '@/lib/store';
 import { databases, APPWRITE_DATABASE_ID, APPWRITE_MESSAGES_COLLECTION_ID } from '@/lib/appwrite';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -22,10 +22,22 @@ export const Chat: React.FC = () => {
 
     const text = input.trim();
     setInput('');
-
-    // Optimistic UI? Maybe wait for server to ensure order.
-    // Let's just send to server.
     const msgId = uuidv4();
+    const playerCount = Object.keys(players).length;
+
+    if (playerCount <= 1) {
+        // Local only
+        const localMsg: ChatMessage = {
+            id: msgId,
+            playerId: myId,
+            playerName: players[myId].name,
+            message: text,
+            timestamp: Date.now()
+        };
+        addMessage(localMsg);
+        return;
+    }
+
     try {
         await databases.createDocument(
             APPWRITE_DATABASE_ID,
