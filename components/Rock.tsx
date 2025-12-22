@@ -17,6 +17,7 @@ export const Rock: React.FC<RockProps> = ({ player, isMe }) => {
   const prevPos = useRef(new THREE.Vector3(player.x, 0, player.y));
   const nextPos = useRef(new THREE.Vector3(player.x, 0, player.y));
   const lastUpdateTime = useRef(0);
+  const lastRenderPos = useRef(new THREE.Vector3(player.x, 0, player.y));
 
   // When props change (new server update), update our buffers
   React.useEffect(() => {
@@ -58,10 +59,25 @@ export const Rock: React.FC<RockProps> = ({ player, isMe }) => {
         }
     }
 
-    if (meshRef.current) {
-      // Just rotate the rock mesh locally
-      meshRef.current.rotation.x += delta * 0.5;
-      meshRef.current.rotation.y += delta * 0.5;
+    if (meshRef.current && groupRef.current) {
+        // Rolling animation: Rotate based on movement displacement
+        const currentPos = groupRef.current.position;
+        const displacement = new THREE.Vector3().subVectors(currentPos, lastRenderPos.current);
+        const distance = displacement.length();
+
+        // Avoid rotating if not moving much, or if teleporting (distance too large)
+        if (distance > 0.001 && distance < 5) {
+             // Axis of rotation is perpendicular to movement direction and Up vector (0,1,0)
+             // Cross Product: displacement X Up
+             const axis = displacement.clone().cross(new THREE.Vector3(0, 1, 0)).normalize();
+
+             // Angle = arc length / radius
+             const angle = distance / player.size;
+
+             meshRef.current.rotateOnWorldAxis(axis, angle);
+        }
+
+        lastRenderPos.current.copy(currentPos);
     }
   });
 
