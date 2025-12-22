@@ -13,28 +13,49 @@ export const Rock: React.FC<RockProps> = ({ player, isMe }) => {
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group>(null);
 
-  // We use a target vector to lerp the GROUP position, not the mesh position.
-  // The mesh should stay at 0,0,0 local to the group.
-  const targetPos = useRef(new THREE.Vector3(player.x, 0, player.y));
+  // Interpolation state
+  const prevPos = useRef(new THREE.Vector3(player.x, 0, player.y));
+  const nextPos = useRef(new THREE.Vector3(player.x, 0, player.y));
+  const lastUpdateTime = useRef(0);
 
+  // When props change (new server update), update our buffers
   React.useEffect(() => {
-    targetPos.current.set(player.x, 0, player.y);
-  }, [player.x, player.y]);
+    if (isMe) {
+        // For local player, just snap to latest state immediately in buffer to avoid logic conflict
+        // (though we might handle isMe separately in useFrame)
+        nextPos.current.set(player.x, 0, player.y);
+    } else {
+        // For remote players, record where we were, and where we are going
+        if (groupRef.current) {
+            prevPos.current.copy(groupRef.current.position);
+        }
+        nextPos.current.set(player.x, 0, player.y);
+        lastUpdateTime.current = Date.now();
+    }
+  }, [player.x, player.y, isMe]);
 
   useFrame((state, delta) => {
-    // Lerp the whole group for smooth movement
     if (groupRef.current) {
-        // If it's me, we might want instant movement to avoid input lag feel,
-        // but for consistency with the camera (which lerps), we can lerp here too.
-        // However, since the parent component updates props based on input,
-        // and we want the rock to be exactly where the logic thinks it is for collision visual,
-        // we might just want to set it directly or lerp very fast.
+        if (isMe) {
+            // Local player: lerp fast to input state for responsiveness
+            // We use the prop directly or the nextPos buffer which is updated by props
+            // Actually, for isMe, it's better to just snap or lerp very fast to reduce input lag perception
+            // The prop 'player' is updated every frame in GameScene for 'isMe', so it is already the "current physics state".
+            // Lerping here just smoothes the visual if the physics update was large.
+            groupRef.current.position.lerp(nextPos.current, delta * 20);
+        } else {
+            // Remote player: Interpolate over time
+            const now = Date.now();
+            const timeSinceUpdate = now - lastUpdateTime.current;
+            const updateInterval = 350; // Expected update rate (~333ms) + buffer
 
-        // Actually, the previous bug was: Group was at X,Y and Mesh was lerping to X,Y (local).
-        // Correct approach: Group is at X,Y. Mesh is at 0,0,0.
-        // To smooth remote players: We can use the Group lerp.
+            // Progress 0..1
+            let alpha = timeSinceUpdate / updateInterval;
+            if (alpha > 1) alpha = 1;
 
-        groupRef.current.position.lerp(targetPos.current, delta * 15);
+            // Simple Linear Interpolation
+            groupRef.current.position.lerpVectors(prevPos.current, nextPos.current, alpha);
+        }
     }
 
     if (meshRef.current) {

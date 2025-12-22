@@ -13,6 +13,7 @@ export default function Home() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playerName, setPlayerName] = useState('');
   const [isMobile, setIsMobile] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
   const [joystickData, setJoystickData] = useState<IJoystickUpdateEvent | null>(null);
 
   const { setMyId, updatePlayer, removePlayer, players, updateFood, removeFood, addMessage } = useGameStore();
@@ -27,7 +28,9 @@ export default function Home() {
   }, []);
 
   const startGame = async () => {
-    if (!playerName.trim()) return;
+    if (!playerName.trim() || isJoining) return;
+
+    setIsJoining(true);
 
     const id = uuidv4();
     const startX = (Math.random() - 0.5) * 50;
@@ -182,6 +185,7 @@ export default function Home() {
     } catch (err) {
       console.error("Error starting game:", err);
       alert("Error conectando al servidor. Revisa la configuración.");
+      setIsJoining(false);
     }
   };
 
@@ -220,14 +224,20 @@ export default function Home() {
             placeholder="Introduce tu nombre"
             value={playerName}
             onChange={(e) => setPlayerName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && startGame()}
+            onKeyDown={(e) => e.key === 'Enter' && !isJoining && startGame()}
+            disabled={isJoining}
           />
         </div>
         <button
           onClick={startGame}
-          className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 px-4 rounded transition duration-200"
+          disabled={isJoining}
+          className={`w-full font-bold py-3 px-4 rounded transition duration-200 ${
+            isJoining
+              ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+              : 'bg-orange-600 hover:bg-orange-700 text-white'
+          }`}
         >
-          Jugar Ahora
+          {isJoining ? 'Uniéndose...' : 'Jugar Ahora'}
         </button>
       </div>
       <p className="mt-8 text-gray-500 text-sm">
