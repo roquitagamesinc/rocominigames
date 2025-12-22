@@ -204,12 +204,9 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
     updatePlayer(newMe);
 
     // Camera follow - Top Down
-    // Fix: Bring camera closer.
-    // Original: Math.max(30, me.size * 10)
-    // New: Math.max(15, me.size * 5)
-    // Update: "debe alejarse para poder ver" (must zoom out to see).
-    // Increased multiplier to 10 to zoom out more as player grows.
-    const camHeight = Math.max(20, me.size * 10);
+    // Adjusted camera height based on player size with limits.
+    // Multiplier set to 5 as requested, with a hard limit of 60 units.
+    const camHeight = Math.min(60, Math.max(15, me.size * 5));
     const targetCamPos = new THREE.Vector3(nextX, camHeight, nextY);
 
     camera.position.lerp(targetCamPos, 0.1);
