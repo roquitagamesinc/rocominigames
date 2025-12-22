@@ -217,8 +217,9 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
 
     // Server Sync (Position + Heartbeat)
     // Fix: 3 times per second = ~333ms
+    // Optimization: If only 1 player is connected (me), do NOT write to database to save costs.
     const now = Date.now();
-    if (now - lastUpdate > 333) {
+    if (now - lastUpdate > 333 && Object.keys(players).length > 1) {
       setLastUpdate(now);
       databases.updateDocument(
         APPWRITE_DATABASE_ID,
@@ -243,10 +244,10 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
       <Grid
         args={[MAP_SIZE, MAP_SIZE]}
         position={[0, -0.1, 0]}
+        cellSize={2}
         cellColor="gray"
-        sectionColor="white"
-        sectionThickness={1}
-        cellThickness={0.5}
+        cellThickness={1}
+        sectionThickness={0}
         fadeDistance={50}
         infiniteGrid={false}
       />
