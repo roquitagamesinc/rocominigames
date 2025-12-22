@@ -26,7 +26,7 @@ export const UI: React.FC<UIProps> = ({ onJoystickMove, onJoystickStop, isMobile
             <h1 className="text-2xl font-bold drop-shadow-md">Rocosos.io</h1>
             {me && (
                 <div className="mt-2 text-xl font-mono text-orange-400 drop-shadow-md">
-                    Masa: {Math.floor(me.size * 10)}
+                    Puntos: {me.score || 0}
                 </div>
             )}
          </div>

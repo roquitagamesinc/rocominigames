@@ -207,7 +207,9 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
     // Fix: Bring camera closer.
     // Original: Math.max(30, me.size * 10)
     // New: Math.max(15, me.size * 5)
-    const camHeight = Math.max(15, me.size * 5);
+    // Update: "debe alejarse para poder ver" (must zoom out to see).
+    // Increased multiplier to 10 to zoom out more as player grows.
+    const camHeight = Math.max(20, me.size * 10);
     const targetCamPos = new THREE.Vector3(nextX, camHeight, nextY);
 
     camera.position.lerp(targetCamPos, 0.1);
@@ -221,7 +223,13 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
         const dist = Math.sqrt(Math.pow(me.x - f.x, 2) + Math.pow(me.y - f.y, 2));
         if (dist < me.size) { // Simple overlap check
             removeFood(f.id);
-            const grownMe = { ...newMe, size: Math.sqrt(me.size * me.size + 0.1) };
+            // Each food gives 1 point. Size still grows by mass logic.
+            const newScore = (me.score || 0) + 1;
+            const grownMe = {
+                ...newMe,
+                size: Math.sqrt(me.size * me.size + 0.1),
+                score: newScore
+            };
             updatePlayer(grownMe);
             databases.deleteDocument(
                 APPWRITE_DATABASE_ID,
@@ -236,8 +244,10 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
         if (other.id !== me.id && other.status === 'alive') {
             const dist = Math.sqrt(Math.pow(me.x - other.x, 2) + Math.pow(me.y - other.y, 2));
             if (dist < me.size && me.size > other.size * 1.1) {
+                // Eating a player gives their score + mass
                 const newSize = Math.sqrt(me.size * me.size + other.size * other.size);
-                updatePlayer({ ...newMe, size: newSize });
+                const newScore = (me.score || 0) + (other.score || 0) + 10; // Bonus for kill
+                updatePlayer({ ...newMe, size: newSize, score: newScore });
                 updatePlayer({ ...other, status: 'dead' });
             }
             if (dist < other.size && other.size > me.size * 1.1) {
@@ -266,6 +276,7 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
           x: newMe.x,
           y: newMe.y,
           size: newMe.size,
+          score: newMe.score || 0,
           lastHeartbeat: newMe.lastHeartbeat
         }
       ).catch((e) => console.error("Sync error", e));

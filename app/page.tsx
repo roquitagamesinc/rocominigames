@@ -40,6 +40,7 @@ export default function Home() {
       x: startX,
       y: startY,
       size: 1,
+      score: 0,
       color,
       status: 'alive',
       lastHeartbeat: Date.now()
@@ -68,6 +69,7 @@ export default function Home() {
                  x: payload.x,
                  y: payload.y,
                  size: payload.size,
+                 score: payload.score || 0,
                  color: payload.color,
                  status: payload.status,
                  lastHeartbeat: payload.lastHeartbeat
@@ -132,6 +134,7 @@ export default function Home() {
                   x: doc.x,
                   y: doc.y,
                   size: doc.size,
+                  score: doc.score || 0,
                   color: doc.color,
                   status: doc.status,
                   lastHeartbeat: doc.lastHeartbeat

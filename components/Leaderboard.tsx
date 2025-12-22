@@ -6,7 +6,7 @@ export const Leaderboard: React.FC = () => {
 
   const sortedPlayers = Object.values(players)
     .filter(p => p.status === 'alive')
-    .sort((a, b) => b.size - a.size)
+    .sort((a, b) => (b.score || 0) - (a.score || 0))
     .slice(0, 10);
 
   return (
@@ -15,7 +15,7 @@ export const Leaderboard: React.FC = () => {
       <ol className="list-decimal list-inside text-sm">
         {sortedPlayers.map((p) => (
           <li key={p.id} className="truncate">
-            <span className="font-bold">{p.name}</span>: {Math.floor(p.size * 10)}
+            <span className="font-bold">{p.name}</span>: {p.score || 0}
           </li>
         ))}
       </ol>
