@@ -4,8 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { GameScene } from '@/components/GameScene';
 import { UI } from '@/components/UI';
-import { useGameStore, Player, FoodItem } from '@/lib/store';
-import { client, databases, APPWRITE_DATABASE_ID, APPWRITE_COLLECTION_ID, APPWRITE_FOOD_COLLECTION_ID } from '@/lib/appwrite';
+import { useGameStore, Player, FoodItem, ChatMessage } from '@/lib/store';
+import { client, databases, APPWRITE_DATABASE_ID, APPWRITE_COLLECTION_ID, APPWRITE_FOOD_COLLECTION_ID, APPWRITE_MESSAGES_COLLECTION_ID } from '@/lib/appwrite';
 import { IJoystickUpdateEvent } from 'react-joystick-component/build/lib/Joystick';
 
 export default function Home() {
@@ -14,7 +14,7 @@ export default function Home() {
   const [isMobile, setIsMobile] = useState(false);
   const [joystickData, setJoystickData] = useState<IJoystickUpdateEvent | null>(null);
 
-  const { setMyId, updatePlayer, removePlayer, players, updateFood, removeFood } = useGameStore();
+  const { setMyId, updatePlayer, removePlayer, players, updateFood, removeFood, addMessage } = useGameStore();
 
   useEffect(() => {
     const checkMobile = () => {
@@ -103,6 +103,21 @@ export default function Home() {
         }
       });
 
+      // Subscribe to Messages
+      client.subscribe(`databases.${APPWRITE_DATABASE_ID}.collections.${APPWRITE_MESSAGES_COLLECTION_ID}.documents`, response => {
+          if (response.events.some(e => e.includes('.create'))) {
+              const payload = response.payload as any;
+              const msg: ChatMessage = {
+                  id: payload.$id,
+                  playerId: payload.playerId,
+                  playerName: payload.playerName,
+                  message: payload.message,
+                  timestamp: payload.timestamp
+              };
+              addMessage(msg);
+          }
+      });
+
       // Load initial players
       const existingPlayers = await databases.listDocuments(
           APPWRITE_DATABASE_ID,
@@ -136,6 +151,26 @@ export default function Home() {
             color: doc.color
         });
       });
+
+      // Load initial messages (last 20)
+      const existingMessages = await databases.listDocuments(
+          APPWRITE_DATABASE_ID,
+          APPWRITE_MESSAGES_COLLECTION_ID,
+          // We could add queries like Query.orderDesc('timestamp'), Query.limit(20) here but we'll load all for now (simple)
+      );
+      // Sort manually just in case
+      existingMessages.documents
+        .sort((a: any, b: any) => a.timestamp - b.timestamp)
+        .slice(-20)
+        .forEach((doc: any) => {
+             addMessage({
+                 id: doc.$id,
+                 playerId: doc.playerId,
+                 playerName: doc.playerName,
+                 message: doc.message,
+                 timestamp: doc.timestamp
+             });
+        });
 
       setIsPlaying(true);
     } catch (err) {

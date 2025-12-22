@@ -31,8 +31,6 @@ Appwrite será nuestro backend para gestionar la base de datos de jugadores en t
 | status | String  | 10 (Required)    |
 | lastHeartbeat | Integer | (Optional) |
 
-*Nota:* `lastHeartbeat` se usa para eliminar jugadores inactivos. Asegúrate de crearlo como `Integer` (BigInt si es posible, o Integer para timestamps).
-
 ### Paso 1.4: Crear Colección `food`
 1. Dentro de `GameDB`, crea una nueva colección llamada `food`.
 2. Copia el **Collection ID** de `food`.
@@ -44,9 +42,21 @@ Appwrite será nuestro backend para gestionar la base de datos de jugadores en t
 | y      | Float   | (Required)       |
 | color  | String  | 20 (Required)    |
 
-### Paso 1.5: Configurar Permisos
+### Paso 1.5: Crear Colección `messages`
+1. Dentro de `GameDB`, crea una nueva colección llamada `messages`.
+2. Copia el **Collection ID** de `messages`.
+
+#### Atributos para `messages`
+| Clave  | Tipo    | Tamaño/Requerido |
+|--------|---------|------------------|
+| playerId | String | 50 (Required)   |
+| playerName | String | 100 (Required) |
+| message | String | 255 (Required)   |
+| timestamp | Integer | (Required)      |
+
+### Paso 1.6: Configurar Permisos
 **Importante:** Para este tutorial, daremos permisos amplios.
-1. Ve a la pestaña **Settings** de AMBAS colecciones (`players` y `food`).
+1. Ve a la pestaña **Settings** de TODAS las colecciones (`players`, `food`, `messages`).
 2. En **Permissions**, añade un nuevo rol: `Any`.
 3. Selecciona los permisos: `Create`, `Read`, `Update`, `Delete`.
 
@@ -63,6 +73,7 @@ NEXT_PUBLIC_APPWRITE_PROJECT=TU_PROJECT_ID
 NEXT_PUBLIC_APPWRITE_DATABASE_ID=TU_DATABASE_ID
 NEXT_PUBLIC_APPWRITE_COLLECTION_ID=TU_PLAYERS_COLLECTION_ID
 NEXT_PUBLIC_APPWRITE_FOOD_COLLECTION_ID=TU_FOOD_COLLECTION_ID
+NEXT_PUBLIC_APPWRITE_MESSAGES_COLLECTION_ID=TU_MESSAGES_COLLECTION_ID
 ```
 
 Reemplaza los valores con los que copiaste en el paso 1.
@@ -76,4 +87,5 @@ Reemplaza los valores con los que copiaste en el paso 1.
 ## 4. Cómo Jugar
 * **PC:** Mueve el mouse para dirigir tu roca.
 * **Móvil:** Usa el joystick virtual.
-* **Objetivo:** Come rocas y comida para crecer. No salgas del mapa (límites invisibles).
+* **Chat:** Escribe en la caja inferior izquierda y presiona Enter.
+* **Objetivo:** Come rocas y comida para crecer y subir en la clasificación.

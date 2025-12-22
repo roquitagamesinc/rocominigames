@@ -44,7 +44,9 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
   useFrame(() => {
     const foodCount = Object.keys(food).length;
     // Spawn more often if very low, capped at 50
-    if (foodCount < 50 && Math.random() < 0.02) {
+    // Fix: Ensure we don't spam if creation is pending.
+    // We rely on random chance to avoid lock contention for now.
+    if (foodCount < 50 && Math.random() < 0.01) {
        const id = uuidv4();
        const newFood: FoodItem = {
            id,
@@ -52,6 +54,7 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
            y: (Math.random() - 0.5) * MAP_SIZE,
            color: `hsl(${Math.random() * 360}, 70%, 60%)`
        };
+       // Optimistic Update: Add to store immediately so it doesn't "flash" if we subscribe to our own events
        updateFood(newFood);
 
        databases.createDocument(
@@ -60,6 +63,7 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
            id,
            newFood
        ).catch(e => {
+           // If creation fails, remove it from local state
            removeFood(id);
        });
     }
@@ -68,16 +72,12 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
   // Cleanup Stale Players logic
   useFrame((state) => {
       const now = Date.now();
-      // Run cleanup check every 5 seconds
       if (now - lastCleanup > 5000) {
           setLastCleanup(now);
           Object.values(players).forEach(p => {
               if (p.id !== myId && p.lastHeartbeat) {
-                  // If no heartbeat in 30 seconds, consider them disconnected
                   if (now - p.lastHeartbeat > 30000) {
                       removePlayer(p.id);
-                      // Try to delete from server (lazy cleanup)
-                      // Only one client needs to succeed, errors ignored
                       databases.deleteDocument(
                           APPWRITE_DATABASE_ID,
                           APPWRITE_COLLECTION_ID,
@@ -127,22 +127,19 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
     updatePlayer(newMe);
 
     // Camera follow - Top Down
-    // Camera is at a fixed height, following player X/Z
-    const camHeight = Math.max(30, me.size * 10); // Adjust height based on size
+    // Fix: Bring camera closer.
+    // Original: Math.max(30, me.size * 10)
+    // New: Math.max(15, me.size * 5)
+    const camHeight = Math.max(15, me.size * 5);
     const targetCamPos = new THREE.Vector3(nextX, camHeight, nextY);
 
-    // We strictly follow X/Z, but lerp height for smoothness during growth
     camera.position.lerp(targetCamPos, 0.1);
-    // Ensure we are always looking down at the player
     camera.lookAt(nextX, 0, nextY);
-
-    // To ensure "Always Top Down", we can force the rotation if lookAt drifts (unlikely if X/Z match)
-    // Actually, lookAt with X,0,Z and Camera at X,H,Z works perfectly for top down.
 
     // Eating Food
     Object.values(food).forEach(f => {
         const dist = Math.sqrt(Math.pow(me.x - f.x, 2) + Math.pow(me.y - f.y, 2));
-        if (dist < me.size) {
+        if (dist < me.size) { // Simple overlap check
             removeFood(f.id);
             const grownMe = { ...newMe, size: Math.sqrt(me.size * me.size + 0.1) };
             updatePlayer(grownMe);
@@ -176,8 +173,9 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
     });
 
     // Server Sync (Position + Heartbeat)
+    // Fix: 3 times per second = ~333ms
     const now = Date.now();
-    if (now - lastUpdate > 100) {
+    if (now - lastUpdate > 333) {
       setLastUpdate(now);
       databases.updateDocument(
         APPWRITE_DATABASE_ID,
@@ -225,7 +223,6 @@ export const GameScene: React.FC<GameSceneProps> = (props) => {
   return (
     <div className="w-full h-screen bg-black">
       <Canvas shadows>
-        {/* Adjusted camera for initial view, though GameLogic overrides it */}
         <PerspectiveCamera makeDefault position={[0, 50, 0]} fov={60} />
         <GameLogic {...props} />
       </Canvas>

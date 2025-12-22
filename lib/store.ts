@@ -18,10 +18,19 @@ export interface FoodItem {
   color: string;
 }
 
+export interface ChatMessage {
+    id: string;
+    playerId: string;
+    playerName: string;
+    message: string;
+    timestamp: number;
+}
+
 interface GameState {
   myId: string | null;
   players: Record<string, Player>;
   food: Record<string, FoodItem>;
+  messages: ChatMessage[];
   setMyId: (id: string) => void;
   updatePlayer: (player: Player) => void;
   removePlayer: (id: string) => void;
@@ -29,12 +38,14 @@ interface GameState {
   updateFood: (item: FoodItem) => void;
   removeFood: (id: string) => void;
   setFood: (food: Record<string, FoodItem>) => void;
+  addMessage: (msg: ChatMessage) => void;
 }
 
 export const useGameStore = create<GameState>((set) => ({
   myId: null,
   players: {},
   food: {},
+  messages: [],
   setMyId: (id) => set({ myId: id }),
   updatePlayer: (player) =>
     set((state) => ({
@@ -58,4 +69,8 @@ export const useGameStore = create<GameState>((set) => ({
       return { food: newFood };
     }),
   setFood: (food) => set({ food }),
+  addMessage: (msg) =>
+      set((state) => ({
+          messages: [...state.messages.slice(-49), msg] // Keep last 50
+      }))
 }));
