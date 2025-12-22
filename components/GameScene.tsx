@@ -68,11 +68,13 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
            color: `hsl(${Math.random() * 360}, 70%, 60%)`
         };
         updateFood(newFood);
+        // Exclude ID from payload to prevent "Unknown Attribute" errors if Appwrite is strict
+        const { id: _, ...foodPayload } = newFood;
         databases.createDocument(
            APPWRITE_DATABASE_ID,
            APPWRITE_FOOD_COLLECTION_ID,
            id,
-           newFood
+           foodPayload
         ).catch(e => {
            console.error("Failed to create food", e);
            removeFood(id);
@@ -104,11 +106,13 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
            // Optimistic Update
            updateFood(newFood);
 
+           // Exclude ID from payload to prevent "Unknown Attribute" errors if Appwrite is strict
+           const { id: _, ...foodPayload } = newFood;
            databases.createDocument(
                APPWRITE_DATABASE_ID,
                APPWRITE_FOOD_COLLECTION_ID,
                id,
-               newFood
+               foodPayload
            ).catch(e => {
                // If creation fails, remove it from local state
                console.error("Failed to create food", e);
