@@ -18,17 +18,16 @@ interface GameSceneProps {
 const MAP_SIZE = 100;
 
 const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
-  const { myId, players, food, updatePlayer, removeFood, updateFood } = useGameStore();
+  const { myId, players, food, updatePlayer, removeFood, updateFood, removePlayer } = useGameStore();
   const { camera } = useThree();
   const [lastUpdate, setLastUpdate] = useState(0);
+  const [lastCleanup, setLastCleanup] = useState(0);
 
   // Mouse position tracking
   const mousePos = useRef(new THREE.Vector2());
 
-  // Update mouse pos
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      // Normalize mouse position (-1 to 1)
       mousePos.current.x = (e.clientX / window.innerWidth) * 2 - 1;
       mousePos.current.y = -(e.clientY / window.innerHeight) * 2 + 1;
     };
@@ -36,11 +35,16 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
-  // Spawn food logic (Master-less: Probabilistic spawning by players)
+  // Initial Camera Setup (Top Down)
+  useEffect(() => {
+      camera.rotation.set(-Math.PI / 2, 0, 0); // Look straight down
+  }, [camera]);
+
+  // Spawn food logic
   useFrame(() => {
-    // Only spawn if total food is low and I am "lucky" (to avoid everyone spawning at once)
     const foodCount = Object.keys(food).length;
-    if (foodCount < 50 && Math.random() < 0.01) {
+    // Spawn more often if very low, capped at 50
+    if (foodCount < 50 && Math.random() < 0.02) {
        const id = uuidv4();
        const newFood: FoodItem = {
            id,
@@ -48,7 +52,6 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
            y: (Math.random() - 0.5) * MAP_SIZE,
            color: `hsl(${Math.random() * 360}, 70%, 60%)`
        };
-       // Optimistic update
        updateFood(newFood);
 
        databases.createDocument(
@@ -57,10 +60,33 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
            id,
            newFood
        ).catch(e => {
-           // If it fails (permission etc), remove it
            removeFood(id);
        });
     }
+  });
+
+  // Cleanup Stale Players logic
+  useFrame((state) => {
+      const now = Date.now();
+      // Run cleanup check every 5 seconds
+      if (now - lastCleanup > 5000) {
+          setLastCleanup(now);
+          Object.values(players).forEach(p => {
+              if (p.id !== myId && p.lastHeartbeat) {
+                  // If no heartbeat in 30 seconds, consider them disconnected
+                  if (now - p.lastHeartbeat > 30000) {
+                      removePlayer(p.id);
+                      // Try to delete from server (lazy cleanup)
+                      // Only one client needs to succeed, errors ignored
+                      databases.deleteDocument(
+                          APPWRITE_DATABASE_ID,
+                          APPWRITE_COLLECTION_ID,
+                          p.id
+                      ).catch(() => {});
+                  }
+              }
+          });
+      }
   });
 
   useFrame((state, delta) => {
@@ -97,25 +123,29 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
     const nextX = Math.max(-MAP_SIZE / 2, Math.min(MAP_SIZE / 2, me.x + moveX));
     const nextY = Math.max(-MAP_SIZE / 2, Math.min(MAP_SIZE / 2, me.y + moveZ));
 
-    const newMe = { ...me, x: nextX, y: nextY };
+    const newMe = { ...me, x: nextX, y: nextY, lastHeartbeat: Date.now() };
     updatePlayer(newMe);
 
-    // Camera follow - Centered on player
-    const camOffset = new THREE.Vector3(0, Math.max(10, me.size * 5), Math.max(10, me.size * 5));
-    const targetCamPos = new THREE.Vector3(nextX, 0, nextY).add(camOffset);
+    // Camera follow - Top Down
+    // Camera is at a fixed height, following player X/Z
+    const camHeight = Math.max(30, me.size * 10); // Adjust height based on size
+    const targetCamPos = new THREE.Vector3(nextX, camHeight, nextY);
+
+    // We strictly follow X/Z, but lerp height for smoothness during growth
     camera.position.lerp(targetCamPos, 0.1);
+    // Ensure we are always looking down at the player
     camera.lookAt(nextX, 0, nextY);
+
+    // To ensure "Always Top Down", we can force the rotation if lookAt drifts (unlikely if X/Z match)
+    // Actually, lookAt with X,0,Z and Camera at X,H,Z works perfectly for top down.
 
     // Eating Food
     Object.values(food).forEach(f => {
         const dist = Math.sqrt(Math.pow(me.x - f.x, 2) + Math.pow(me.y - f.y, 2));
         if (dist < me.size) {
-            // Eat food
             removeFood(f.id);
-            const grownMe = { ...newMe, size: Math.sqrt(me.size * me.size + 0.1) }; // Grow slightly
+            const grownMe = { ...newMe, size: Math.sqrt(me.size * me.size + 0.1) };
             updatePlayer(grownMe);
-
-            // Server delete
             databases.deleteDocument(
                 APPWRITE_DATABASE_ID,
                 APPWRITE_FOOD_COLLECTION_ID,
@@ -124,19 +154,15 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
         }
     });
 
-    // Eating Players & Being Eaten
+    // Eating Players
     Object.values(players).forEach(other => {
         if (other.id !== me.id && other.status === 'alive') {
             const dist = Math.sqrt(Math.pow(me.x - other.x, 2) + Math.pow(me.y - other.y, 2));
-
-            // Eat logic
             if (dist < me.size && me.size > other.size * 1.1) {
                 const newSize = Math.sqrt(me.size * me.size + other.size * other.size);
                 updatePlayer({ ...newMe, size: newSize });
                 updatePlayer({ ...other, status: 'dead' });
             }
-
-            // Die logic
             if (dist < other.size && other.size > me.size * 1.1) {
                  updatePlayer({ ...me, status: 'dead' });
                  databases.updateDocument(
@@ -149,7 +175,7 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
         }
     });
 
-    // Server Sync
+    // Server Sync (Position + Heartbeat)
     const now = Date.now();
     if (now - lastUpdate > 100) {
       setLastUpdate(now);
@@ -160,7 +186,8 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
         {
           x: newMe.x,
           y: newMe.y,
-          size: newMe.size
+          size: newMe.size,
+          lastHeartbeat: newMe.lastHeartbeat
         }
       ).catch((e) => console.error("Sync error", e));
     }
@@ -172,7 +199,6 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
       <directionalLight position={[10, 20, 10]} intensity={1} castShadow />
       <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
 
-      {/* Improved Grid */}
       <Grid
         args={[MAP_SIZE, MAP_SIZE]}
         position={[0, -0.1, 0]}
@@ -199,7 +225,8 @@ export const GameScene: React.FC<GameSceneProps> = (props) => {
   return (
     <div className="w-full h-screen bg-black">
       <Canvas shadows>
-        <PerspectiveCamera makeDefault position={[0, 20, 20]} />
+        {/* Adjusted camera for initial view, though GameLogic overrides it */}
+        <PerspectiveCamera makeDefault position={[0, 50, 0]} fov={60} />
         <GameLogic {...props} />
       </Canvas>
     </div>

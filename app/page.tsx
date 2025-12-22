@@ -17,7 +17,6 @@ export default function Home() {
   const { setMyId, updatePlayer, removePlayer, players, updateFood, removeFood } = useGameStore();
 
   useEffect(() => {
-    // Check if mobile
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768 || 'ontouchstart' in window);
     };
@@ -42,13 +41,13 @@ export default function Home() {
       size: 1,
       color,
       status: 'alive',
+      lastHeartbeat: Date.now()
     };
 
     setMyId(id);
     updatePlayer(me);
 
     try {
-      // Create document in Appwrite
       await databases.createDocument(
         APPWRITE_DATABASE_ID,
         APPWRITE_COLLECTION_ID,
@@ -56,7 +55,7 @@ export default function Home() {
         me
       );
 
-      // Subscribe to changes (Players)
+      // Subscribe to Players
       client.subscribe(`databases.${APPWRITE_DATABASE_ID}.collections.${APPWRITE_COLLECTION_ID}.documents`, response => {
         const payload = response.payload as any;
         const eventId = payload.$id;
@@ -69,7 +68,8 @@ export default function Home() {
                  y: payload.y,
                  size: payload.size,
                  color: payload.color,
-                 status: payload.status
+                 status: payload.status,
+                 lastHeartbeat: payload.lastHeartbeat
              };
              if (p.id === id) {
                  if (p.status === 'dead' && me.status !== 'dead') {
@@ -85,7 +85,7 @@ export default function Home() {
         }
       });
 
-      // Subscribe to changes (Food)
+      // Subscribe to Food
       client.subscribe(`databases.${APPWRITE_DATABASE_ID}.collections.${APPWRITE_FOOD_COLLECTION_ID}.documents`, response => {
         const payload = response.payload as any;
         const eventId = payload.$id;
@@ -117,7 +117,8 @@ export default function Home() {
                   y: doc.y,
                   size: doc.size,
                   color: doc.color,
-                  status: doc.status
+                  status: doc.status,
+                  lastHeartbeat: doc.lastHeartbeat
               });
           }
       });

@@ -8,6 +8,7 @@ export interface Player {
   color: string;
   name: string;
   status: 'alive' | 'dead';
+  lastHeartbeat?: number; // timestamp
 }
 
 export interface FoodItem {

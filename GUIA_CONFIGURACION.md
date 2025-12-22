@@ -29,6 +29,9 @@ Appwrite será nuestro backend para gestionar la base de datos de jugadores en t
 | size   | Float   | (Required)       |
 | color  | String  | 20 (Required)    |
 | status | String  | 10 (Required)    |
+| lastHeartbeat | Integer | (Optional) |
+
+*Nota:* `lastHeartbeat` se usa para eliminar jugadores inactivos. Asegúrate de crearlo como `Integer` (BigInt si es posible, o Integer para timestamps).
 
 ### Paso 1.4: Crear Colección `food`
 1. Dentro de `GameDB`, crea una nueva colección llamada `food`.
