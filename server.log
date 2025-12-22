@@ -1,0 +1,15 @@
+
+> rocosos-io@0.1.0 dev
+> next dev
+
+▲ Next.js 16.1.0 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.0.2:3000
+
+✓ Starting...
+✓ Ready in 992ms
+ GET / 200 in 816ms (compile: 362ms, render: 454ms)
+ GET / 200 in 56ms (compile: 6ms, render: 51ms)
+ GET / 200 in 65ms (compile: 4ms, render: 61ms)
+ GET / 200 in 47ms (compile: 4ms, render: 44ms)
+ GET / 200 in 58ms (compile: 4ms, render: 55ms)

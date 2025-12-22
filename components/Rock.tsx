@@ -55,6 +55,7 @@ export const Rock: React.FC<RockProps> = ({ player, isMe }) => {
       </Dodecahedron>
       <Text
         position={[0, player.size + 1.5, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
         fontSize={0.5 + (player.size * 0.1)} // Scale text slightly with player
         color="white"
         anchorX="center"

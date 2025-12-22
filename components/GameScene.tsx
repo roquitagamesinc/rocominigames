@@ -6,10 +6,11 @@ import { PerspectiveCamera, Stars, Grid } from '@react-three/drei';
 import { useGameStore, Player, FoodItem } from '@/lib/store';
 import { Rock } from './Rock';
 import { Food } from './Food';
-import { databases, client, APPWRITE_DATABASE_ID, APPWRITE_COLLECTION_ID, APPWRITE_FOOD_COLLECTION_ID } from '@/lib/appwrite';
+import { databases, client, APPWRITE_DATABASE_ID, APPWRITE_COLLECTION_ID, APPWRITE_FOOD_COLLECTION_ID, APPWRITE_MESSAGES_COLLECTION_ID } from '@/lib/appwrite';
 import * as THREE from 'three';
 import { IJoystickUpdateEvent } from 'react-joystick-component/build/lib/Joystick';
 import { v4 as uuidv4 } from 'uuid';
+import { Query } from 'appwrite';
 
 interface GameSceneProps {
   joystickData: IJoystickUpdateEvent | null;
@@ -22,6 +23,7 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
   const { camera } = useThree();
   const [lastUpdate, setLastUpdate] = useState(0);
   const [lastCleanup, setLastCleanup] = useState(0);
+  const [lastMessageCleanup, setLastMessageCleanup] = useState(0);
 
   // Mouse position tracking
   const mousePos = useRef(new THREE.Vector2());
@@ -38,15 +40,15 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
   // Initial Camera Setup (Top Down)
   useEffect(() => {
       camera.rotation.set(-Math.PI / 2, 0, 0); // Look straight down
+      camera.up.set(0, 0, -1); // North is "Up" on the screen (Top-down view)
   }, [camera]);
 
   // Spawn food logic
   useFrame(() => {
     const foodCount = Object.keys(food).length;
     // Spawn more often if very low, capped at 50
-    // Fix: Ensure we don't spam if creation is pending.
-    // We rely on random chance to avoid lock contention for now.
-    if (foodCount < 50 && Math.random() < 0.01) {
+    // Reduced spawn rate to 0.5% chance per frame to avoid rate limits
+    if (foodCount < 50 && Math.random() < 0.005) {
        const id = uuidv4();
        const newFood: FoodItem = {
            id,
@@ -64,16 +66,18 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
            newFood
        ).catch(e => {
            // If creation fails, remove it from local state
+           console.error("Failed to create food", e);
            removeFood(id);
        });
     }
   });
 
-  // Cleanup Stale Players logic
+  // Cleanup Stale Players logic & Old Messages
   useFrame((state) => {
       const now = Date.now();
       if (now - lastCleanup > 5000) {
           setLastCleanup(now);
+          // Cleanup Players
           Object.values(players).forEach(p => {
               if (p.id !== myId && p.lastHeartbeat) {
                   if (now - p.lastHeartbeat > 30000) {
@@ -86,6 +90,29 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
                   }
               }
           });
+      }
+
+      // Cleanup Messages older than 2 minutes (120000ms)
+      if (now - lastMessageCleanup > 10000) { // Check every 10 seconds
+          setLastMessageCleanup(now);
+          const twoMinutesAgo = now - 120000;
+
+          // Since we can't easily query all messages via store (only last 50),
+          // we should query the database for old messages to ensure deep cleanup.
+          // Note: This requires permissions to delete.
+          databases.listDocuments(
+              APPWRITE_DATABASE_ID,
+              APPWRITE_MESSAGES_COLLECTION_ID,
+              [Query.lessThan('timestamp', twoMinutesAgo), Query.limit(100)]
+          ).then(res => {
+              res.documents.forEach(doc => {
+                  databases.deleteDocument(
+                      APPWRITE_DATABASE_ID,
+                      APPWRITE_MESSAGES_COLLECTION_ID,
+                      doc.$id
+                  ).catch(console.error);
+              });
+          }).catch(console.error);
       }
   });
 
@@ -134,9 +161,12 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
     const targetCamPos = new THREE.Vector3(nextX, camHeight, nextY);
 
     camera.position.lerp(targetCamPos, 0.1);
-    camera.lookAt(nextX, 0, nextY);
-
-    // Eating Food
+    // camera.lookAt causes instability when looking straight down if Up vector isn't handled.
+    // Since we set Up to (0,0,-1) and rotation to (-PI/2, 0, 0), and we move X/Z to match player,
+    // we don't strictly need lookAt, but if we use it, it should work now.
+    // However, to be safe and avoid "spinning", we'll just rely on the fixed rotation + position.
+    // The camera is already rotated -90deg X.
+    // camera.lookAt(nextX, 0, nextY); // REMOVED to prevent spinning
     Object.values(food).forEach(f => {
         const dist = Math.sqrt(Math.pow(me.x - f.x, 2) + Math.pow(me.y - f.y, 2));
         if (dist < me.size) { // Simple overlap check
