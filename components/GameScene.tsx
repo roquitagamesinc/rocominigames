@@ -44,31 +44,44 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
   }, [camera]);
 
   // Spawn food logic
-  useFrame(() => {
-    const foodCount = Object.keys(food).length;
-    // Spawn more often if very low, capped at 50
-    // Reduced spawn rate to 0.5% chance per frame to avoid rate limits
-    if (foodCount < 50 && Math.random() < 0.005) {
-       const id = uuidv4();
-       const newFood: FoodItem = {
-           id,
-           x: (Math.random() - 0.5) * MAP_SIZE,
-           y: (Math.random() - 0.5) * MAP_SIZE,
-           color: `hsl(${Math.random() * 360}, 70%, 60%)`
-       };
-       // Optimistic Update: Add to store immediately so it doesn't "flash" if we subscribe to our own events
-       updateFood(newFood);
+  // Optimized for server: Only one client ("Host") should spawn food to avoid collisions and rate limits.
+  // We determine the host by sorting player IDs. The lowest ID (lexicographically) is the host.
+  const [lastFoodSpawn, setLastFoodSpawn] = useState(0);
 
-       databases.createDocument(
-           APPWRITE_DATABASE_ID,
-           APPWRITE_FOOD_COLLECTION_ID,
-           id,
-           newFood
-       ).catch(e => {
-           // If creation fails, remove it from local state
-           console.error("Failed to create food", e);
-           removeFood(id);
-       });
+  useFrame(() => {
+    if (!myId || !players[myId]) return;
+
+    // Determine if I am the host
+    const allPlayerIds = Object.keys(players).sort();
+    const isHost = allPlayerIds.length > 0 && allPlayerIds[0] === myId;
+
+    if (isHost) {
+        const foodCount = Object.keys(food).length;
+        const now = Date.now();
+        // Target 200 items. Throttle spawn to once every 200ms to be safe with rate limits.
+        if (foodCount < 200 && now - lastFoodSpawn > 200) {
+           setLastFoodSpawn(now);
+           const id = uuidv4();
+           const newFood: FoodItem = {
+               id,
+               x: (Math.random() - 0.5) * MAP_SIZE,
+               y: (Math.random() - 0.5) * MAP_SIZE,
+               color: `hsl(${Math.random() * 360}, 70%, 60%)`
+           };
+           // Optimistic Update
+           updateFood(newFood);
+
+           databases.createDocument(
+               APPWRITE_DATABASE_ID,
+               APPWRITE_FOOD_COLLECTION_ID,
+               id,
+               newFood
+           ).catch(e => {
+               // If creation fails, remove it from local state
+               console.error("Failed to create food", e);
+               removeFood(id);
+           });
+        }
     }
   });
 
