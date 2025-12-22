@@ -7,6 +7,7 @@ import { UI } from '@/components/UI';
 import { useGameStore, Player, FoodItem, ChatMessage } from '@/lib/store';
 import { client, databases, APPWRITE_DATABASE_ID, APPWRITE_COLLECTION_ID, APPWRITE_FOOD_COLLECTION_ID, APPWRITE_MESSAGES_COLLECTION_ID } from '@/lib/appwrite';
 import { IJoystickUpdateEvent } from 'react-joystick-component/build/lib/Joystick';
+import { Query } from 'appwrite';
 
 export default function Home() {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -139,9 +140,11 @@ export default function Home() {
       });
 
       // Load initial food
+      // Increase limit to 1000 to ensure we see all food on the map
       const existingFood = await databases.listDocuments(
         APPWRITE_DATABASE_ID,
-        APPWRITE_FOOD_COLLECTION_ID
+        APPWRITE_FOOD_COLLECTION_ID,
+        [Query.limit(1000)]
       );
       existingFood.documents.forEach((doc: any) => {
         updateFood({

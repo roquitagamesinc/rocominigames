@@ -51,13 +51,46 @@ const GameLogic: React.FC<GameSceneProps> = ({ joystickData }) => {
   useFrame(() => {
     if (!myId || !players[myId]) return;
 
-    // Determine if I am the host
-    const allPlayerIds = Object.keys(players).sort();
-    const isHost = allPlayerIds.length > 0 && allPlayerIds[0] === myId;
+    const now = Date.now();
+    const foodCount = Object.keys(food).length;
+
+    // Emergency Spawn: If food is effectively zero, ANYONE can spawn with low probability
+    // This handles the "cold start" or "stale host" case immediately.
+    if (foodCount === 0 && Math.random() < 0.05 && now - lastFoodSpawn > 500) {
+        setLastFoodSpawn(now);
+        const id = uuidv4();
+        // Spawn near me initially so I can see it
+        const me = players[myId];
+        const newFood: FoodItem = {
+           id,
+           x: Math.max(-MAP_SIZE/2, Math.min(MAP_SIZE/2, me.x + (Math.random() - 0.5) * 10)),
+           y: Math.max(-MAP_SIZE/2, Math.min(MAP_SIZE/2, me.y + (Math.random() - 0.5) * 10)),
+           color: `hsl(${Math.random() * 360}, 70%, 60%)`
+        };
+        updateFood(newFood);
+        databases.createDocument(
+           APPWRITE_DATABASE_ID,
+           APPWRITE_FOOD_COLLECTION_ID,
+           id,
+           newFood
+        ).catch(e => {
+           console.error("Failed to create food", e);
+           removeFood(id);
+        });
+        return;
+    }
+
+    // Host Election Logic
+    // Only consider players who have updated their heartbeat recently (last 10s) as candidates.
+    // This ignores stale/ghost players from the database.
+    const activeCandidates = Object.values(players)
+        .filter(p => p.lastHeartbeat && (now - p.lastHeartbeat < 10000))
+        .map(p => p.id)
+        .sort();
+
+    const isHost = activeCandidates.length > 0 && activeCandidates[0] === myId;
 
     if (isHost) {
-        const foodCount = Object.keys(food).length;
-        const now = Date.now();
         // Target 200 items. Throttle spawn to once every 200ms to be safe with rate limits.
         if (foodCount < 200 && now - lastFoodSpawn > 200) {
            setLastFoodSpawn(now);
