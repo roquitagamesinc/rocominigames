@@ -30,6 +30,11 @@ export default function Home() {
   const startGame = async () => {
     if (!playerName.trim() || isJoining) return;
 
+    if (!APPWRITE_DATABASE_ID || !APPWRITE_COLLECTION_ID || !APPWRITE_FOOD_COLLECTION_ID) {
+        alert("Error de Configuración: Faltan variables de entorno. Verifica tu archivo .env.local.");
+        return;
+    }
+
     setIsJoining(true);
 
     const id = uuidv4();
@@ -182,9 +187,19 @@ export default function Home() {
         });
 
       setIsPlaying(true);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error starting game:", err);
-      alert("Error conectando al servidor. Revisa la configuración.");
+
+      let errorMessage = "Error conectando al servidor.";
+      if (err.message === "Failed to fetch") {
+          errorMessage += " No se pudo contactar con Appwrite. Verifica que el ENDPOINT sea correcto y accesible.";
+      } else if (err.code === 401) {
+          errorMessage += " No autorizado. Verifica el Project ID.";
+      } else if (err.code === 404) {
+          errorMessage += " Recurso no encontrado. Verifica los ID de Base de Datos y Colecciones.";
+      }
+
+      alert(errorMessage);
       setIsJoining(false);
     }
   };
