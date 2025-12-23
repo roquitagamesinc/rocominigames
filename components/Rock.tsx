@@ -68,8 +68,8 @@ export const Rock: React.FC<RockProps> = ({ player, isMe }) => {
         // Avoid rotating if not moving much, or if teleporting (distance too large)
         if (distance > 0.001 && distance < 5) {
              // Axis of rotation is perpendicular to movement direction and Up vector (0,1,0)
-             // Cross Product: displacement X Up
-             const axis = displacement.clone().cross(new THREE.Vector3(0, 1, 0)).normalize();
+             // Cross Product: Up X displacement (Order matters for direction)
+             const axis = new THREE.Vector3(0, 1, 0).cross(displacement).normalize();
 
              // Angle = arc length / radius
              const angle = distance / player.size;
