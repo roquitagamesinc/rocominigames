@@ -5,6 +5,7 @@ export interface Player {
   x: number;
   y: number;
   size: number;
+  score: number;
   color: string;
   name: string;
   status: 'alive' | 'dead';

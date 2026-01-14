@@ -7,11 +7,13 @@ import { UI } from '@/components/UI';
 import { useGameStore, Player, FoodItem, ChatMessage } from '@/lib/store';
 import { client, databases, APPWRITE_DATABASE_ID, APPWRITE_COLLECTION_ID, APPWRITE_FOOD_COLLECTION_ID, APPWRITE_MESSAGES_COLLECTION_ID } from '@/lib/appwrite';
 import { IJoystickUpdateEvent } from 'react-joystick-component/build/lib/Joystick';
+import { Query } from 'appwrite';
 
 export default function Home() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playerName, setPlayerName] = useState('');
   const [isMobile, setIsMobile] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
   const [joystickData, setJoystickData] = useState<IJoystickUpdateEvent | null>(null);
 
   const { setMyId, updatePlayer, removePlayer, players, updateFood, removeFood, addMessage } = useGameStore();
@@ -26,7 +28,14 @@ export default function Home() {
   }, []);
 
   const startGame = async () => {
-    if (!playerName.trim()) return;
+    if (!playerName.trim() || isJoining) return;
+
+    if (!APPWRITE_DATABASE_ID || !APPWRITE_COLLECTION_ID || !APPWRITE_FOOD_COLLECTION_ID) {
+        alert("Error de Configuración: Faltan variables de entorno. Verifica tu archivo .env.local.");
+        return;
+    }
+
+    setIsJoining(true);
 
     const id = uuidv4();
     const startX = (Math.random() - 0.5) * 50;
@@ -39,6 +48,7 @@ export default function Home() {
       x: startX,
       y: startY,
       size: 1,
+      score: 0,
       color,
       status: 'alive',
       lastHeartbeat: Date.now()
@@ -67,6 +77,7 @@ export default function Home() {
                  x: payload.x,
                  y: payload.y,
                  size: payload.size,
+                 score: payload.score || 0,
                  color: payload.color,
                  status: payload.status,
                  lastHeartbeat: payload.lastHeartbeat
@@ -131,6 +142,7 @@ export default function Home() {
                   x: doc.x,
                   y: doc.y,
                   size: doc.size,
+                  score: doc.score || 0,
                   color: doc.color,
                   status: doc.status,
                   lastHeartbeat: doc.lastHeartbeat
@@ -139,9 +151,11 @@ export default function Home() {
       });
 
       // Load initial food
+      // Increase limit to 1000 to ensure we see all food on the map
       const existingFood = await databases.listDocuments(
         APPWRITE_DATABASE_ID,
-        APPWRITE_FOOD_COLLECTION_ID
+        APPWRITE_FOOD_COLLECTION_ID,
+        [Query.limit(1000)]
       );
       existingFood.documents.forEach((doc: any) => {
         updateFood({
@@ -173,9 +187,20 @@ export default function Home() {
         });
 
       setIsPlaying(true);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error starting game:", err);
-      alert("Error conectando al servidor. Revisa la configuración.");
+
+      let errorMessage = "Error conectando al servidor.";
+      if (err.message === "Failed to fetch") {
+          errorMessage += " No se pudo contactar con Appwrite. Verifica que el ENDPOINT sea correcto y accesible.";
+      } else if (err.code === 401) {
+          errorMessage += " No autorizado. Verifica el Project ID.";
+      } else if (err.code === 404) {
+          errorMessage += " Recurso no encontrado. Verifica los ID de Base de Datos y Colecciones.";
+      }
+
+      alert(errorMessage);
+      setIsJoining(false);
     }
   };
 
@@ -214,14 +239,20 @@ export default function Home() {
             placeholder="Introduce tu nombre"
             value={playerName}
             onChange={(e) => setPlayerName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && startGame()}
+            onKeyDown={(e) => e.key === 'Enter' && !isJoining && startGame()}
+            disabled={isJoining}
           />
         </div>
         <button
           onClick={startGame}
-          className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 px-4 rounded transition duration-200"
+          disabled={isJoining}
+          className={`w-full font-bold py-3 px-4 rounded transition duration-200 ${
+            isJoining
+              ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+              : 'bg-orange-600 hover:bg-orange-700 text-white'
+          }`}
         >
-          Jugar Ahora
+          {isJoining ? 'Uniéndose...' : 'Jugar Ahora'}
         </button>
       </div>
       <p className="mt-8 text-gray-500 text-sm">
